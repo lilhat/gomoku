@@ -11,12 +11,10 @@ class Player(GomokuAgent):
         super().__init__(ID, BOARD_SIZE, X_IN_A_LINE)
         # Sets the max depth of the minimax algorithm to 0
         self.MAX_DEPTH = 0
-        self.killer_moves = []
 
     # Overwriting the move function from GomokuAgent
     def move(self, board):
         # Initialize variables
-        self.killer_moves = []
         best_move = None
         best_score = -np.inf
         # Loop through all possible moves
