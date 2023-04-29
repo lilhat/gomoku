@@ -11,6 +11,7 @@ class Player(GomokuAgent):
         super().__init__(ID, BOARD_SIZE, X_IN_A_LINE)
         # Sets the max depth of the minimax algorithm to 0
         self.MAX_DEPTH = 0
+        self.DIRECTIONS = [(1, 0), (0, 1), (1, 1), (-1, 1)]
 
     # Overwriting the move function from GomokuAgent
     def move(self, board):
@@ -29,9 +30,10 @@ class Player(GomokuAgent):
                 best_move = move
                 best_score = score
         # Return best move
+        print(best_score)
+        print(best_move)
         return best_move
 
-    # Function that generates all possible moves on board
     def generate_moves(self, board):
         moves = []
         # Iterate through every position on the board
@@ -42,19 +44,50 @@ class Player(GomokuAgent):
                     moves.append((r, c))
                 # Diagonal moves
                 if legalMove(board, (r - 1, c - 1)):
-                    moves.append((r - 1, c - 1))
-                if legalMove(board, (r - 1, c + 1)):
-                    moves.append((r - 1, c + 1))
-                if legalMove(board, (r + 1, c - 1)):
-                    moves.append((r + 1, c - 1))
-                if legalMove(board, (r + 1, c + 1)):
-                    moves.append((r + 1, c + 1))
+                    if (board[r - 1, c - 1] == -self.ID and 
+                        np.sum(board[r - self.X_IN_A_LINE + 1:r, c - self.X_IN_A_LINE + 1:c]) == -(self.X_IN_A_LINE - 1) and 
+                        legalMove(board, (r - self.X_IN_A_LINE, c - self.X_IN_A_LINE))):
+                        moves.append((r - self.X_IN_A_LINE, c - self.X_IN_A_LINE))
+                    if (c + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and
+                        board[r - 1, c + 1] == -self.ID and 
+                        np.sum(board[r - self.X_IN_A_LINE + 1:r, c + 1:c + self.X_IN_A_LINE]) == -(self.X_IN_A_LINE - 1) and 
+                        legalMove(board, (r - self.X_IN_A_LINE, c + self.X_IN_A_LINE))):
+                        moves.append((r - self.X_IN_A_LINE, c + self.X_IN_A_LINE))
+                    if (r + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and
+                        board[r + 1, c - 1] == -self.ID and 
+                        np.sum(board[r + 1:r + self.X_IN_A_LINE, c - self.X_IN_A_LINE + 1:c]) == -(self.X_IN_A_LINE - 1) and 
+                        legalMove(board, (r + self.X_IN_A_LINE, c - self.X_IN_A_LINE))):
+                        moves.append((r + self.X_IN_A_LINE, c - self.X_IN_A_LINE))
+                    if (r + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and c + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and
+                        board[r + 1, c + 1] == -self.ID and 
+                        np.sum(board[r + 1:r + self.X_IN_A_LINE, c + 1:c + self.X_IN_A_LINE]) == -(self.X_IN_A_LINE - 1) and 
+                        legalMove(board, (r + self.X_IN_A_LINE, c + self.X_IN_A_LINE))):
+                        moves.append((r + self.X_IN_A_LINE, c + self.X_IN_A_LINE))
                 # Vertical moves
                 if legalMove(board, (r - 1, c)):
-                    moves.append((r - 1, c))
-                if legalMove(board, (r + 1, c)):
-                    moves.append((r + 1, c))
+                    if (board[r - 1, c] == -self.ID and 
+                        np.sum(board[r - self.X_IN_A_LINE + 1:r, c]) == -(self.X_IN_A_LINE - 1) and 
+                        legalMove(board, (r - self.X_IN_A_LINE, c))):
+                        moves.append((r - self.X_IN_A_LINE, c))
+                    if (r + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and
+                        board[r + 1, c] == -self.ID and 
+                        np.sum(board[r + 1:r + self.X_IN_A_LINE, c]) == -(self.X_IN_A_LINE - 1) and 
+                        legalMove(board, (r + self.X_IN_A_LINE, c))):
+                                moves.append((r + self.X_IN_A_LINE, c))
+                # Horizontal moves
+                if legalMove(board, (r, c - 1)):
+                    if (board[r, c - 1] == -self.ID and 
+                        np.sum(board[r, c - self.X_IN_A_LINE + 1:c]) == -(self.X_IN_A_LINE - 1) and 
+                        legalMove(board, (r, c - self.X_IN_A_LINE))):
+                        moves.append((r, c - self.X_IN_A_LINE))
+                    if (c + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and
+                        board[r, c + 1] == -self.ID and 
+                        np.sum(board[r, c + 1:c + self.X_IN_A_LINE]) == -(self.X_IN_A_LINE - 1) and 
+                        legalMove(board, (r, c + self.X_IN_A_LINE))):
+                        moves.append((r, c + self.X_IN_A_LINE))
+
         return moves
+
 
     '''
     This function is an implementation of the minimax algorith with alpha-beta pruning
@@ -109,6 +142,7 @@ class Player(GomokuAgent):
     Returns:
         - score: The heuristic score of the board for the current player
     '''
+    
     def heuristic_score(self, board):
         score = 0
         for r in range(self.BOARD_SIZE):
@@ -117,37 +151,24 @@ class Player(GomokuAgent):
                     # Add the score for the current position and possible moves from this position
                     score += self.get_score_for_position(board, r, c)
                     score += self.get_score_for_potential_moves(board, r, c)
-                    # if (r,c) == (3,3) or (r,c) == (4,4) or (r,c) == (3,4) or (r,c) == (4,3):
-                    #     score += 50  # Bonus for having a piece in the center of the board
-                    # if self.ID == 1:
-                    #     if board[r, c] == 1:
-                    #         score += 5  # Bonus for having more pieces on the board
-                    #     else:
-                    #         score -= 5
-                    # else:
-                    #     if board[r, c] == -1:
-                    #         score += 5
-                    #     else:
-                    #         score -= 5
                 elif board[r, c] == -self.ID:
                     # Subtract the score for the current position and possible moves from this position
                     score -= self.get_score_for_position(board, r, c)
                     score -= self.get_score_for_potential_moves(board, r, c)
-                    # if (r,c) == (3,3) or (r,c) == (4,4) or (r,c) == (3,4) or (r,c) == (4,3):
-                    #     score -= 50  # Penalty for opponent having a piece in the center of the board
-                    # if self.ID == 1:
-                    #     if board[r, c] == 1:
-                    #         score -= 5  # Penalty for opponent having more pieces on the board
-                    #     else:
-                    #         score += 5
-                    # else:
-                    #     if board[r, c] == -1:
-                    #         score -= 5
-                    #     else:
-                    #         score += 5
+                    if (r,c) == (3,3) or (r,c) == (4,4) or (r,c) == (3,4) or (r,c) == (4,3):
+                        score -= 50  # Penalty for opponent having a piece in the center of the board
+                    if self.ID == 1:
+                        if board[r, c] == 1:
+                            score -= 5  # Penalty for opponent having more pieces on the board
+                        else:
+                            score += 5
+                    else:
+                        if board[r, c] == -1:
+                            score -= 5
+                        else:
+                            score += 5
+                                
         return score
-
-    ## KEEP TESTING AND CHANGING SCORES, AI SHOULD DRAW AGAINST ITSELF.
 
     """
         Returns the score for a given position on the board.
@@ -205,26 +226,24 @@ class Player(GomokuAgent):
                             break
                     if piece_count == self.X_IN_A_LINE - 1:
                         score -= 1000000
-                # check diagonally
-                check_row = row - dr * (self.X_IN_A_LINE - 1)
-                check_col = col - dc * (self.X_IN_A_LINE - 1)
-                if check_row >= 0 and check_row < self.BOARD_SIZE and check_col >= 0 and check_col < self.BOARD_SIZE and board[check_row][check_col] == self.ID:
+        directions = [(0, 1), (1, 0), (1, 1), (-1, 1)] # new diagonal directions
+        for dr, dc in directions:
+            piece_count = 0
+            for i in range(-self.X_IN_A_LINE + 1, self.X_IN_A_LINE):
+                r = row + i * dr
+                c = col + i * dc
+                if r < 0 or r >= self.BOARD_SIZE or c < 0 or c >= self.BOARD_SIZE:
+                    continue
+                if board[r, c] == self.ID:
+                    piece_count += 1
+                elif board[r, c] == 0:
+                    continue
+                else:
                     piece_count = 0
-                    for i in range(self.X_IN_A_LINE):
-                        r = check_row + i * dr
-                        c = check_col + i * dc
-
-                        if r < 0 or r >= self.BOARD_SIZE or c < 0 or c >= self.BOARD_SIZE:
-                            break
-                        if board[r][c] == self.ID:
-                            piece_count += 1
-                        elif board[r][c] == 0:
-                            break
-                        else:
-                            piece_count = 0
-                            break
-                    if piece_count == self.X_IN_A_LINE - 1:
-                        score -= 1000000
+                    break
+        
+            if piece_count >= self.X_IN_A_LINE - 1:
+                score += 1000
 
         return score
     
