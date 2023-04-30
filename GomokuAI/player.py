@@ -11,7 +11,6 @@ class Player(GomokuAgent):
         super().__init__(ID, BOARD_SIZE, X_IN_A_LINE)
         # Sets the max depth of the minimax algorithm to 0
         self.MAX_DEPTH = 0
-        self.DIRECTIONS = [(1, 0), (0, 1), (1, 1), (-1, 1)]
 
     # Overwriting the move function from GomokuAgent
     def move(self, board):
@@ -20,7 +19,7 @@ class Player(GomokuAgent):
         best_score = -np.inf
         # Loop through all possible moves
         for move in self.generate_moves(board):
-            # Copy created of the board, make current move on copy
+            # Create copy of the board, make current move on copy
             new_board = np.copy(board)
             new_board[move] = self.ID
             # Calculate the score for current move using minimax algorithm
@@ -34,6 +33,13 @@ class Player(GomokuAgent):
         print(best_move)
         return best_move
 
+    '''
+    Generates a list of legal moves for a given board
+    Parameters:
+        - board: the current state of the game
+    returns:
+        - moves: a list of legal moves for the given game board
+    '''
     def generate_moves(self, board):
         moves = []
         # Iterate through every position on the board
@@ -42,8 +48,11 @@ class Player(GomokuAgent):
                 # If position is a legal move, add it to list of moves
                 if legalMove(board, (r, c)):
                     moves.append((r, c))
-                # Diagonal moves
+                # Check for diagonal moves
                 if legalMove(board, (r - 1, c - 1)):
+                    # Check if diagonal move is valid then add valid diagonal moves to the list of moves
+                    # Checks if there is enough space on either side to form 5 in a row
+                    # Also checks if the next space on either end is occupied by the opponent for possibility to block
                     if (board[r - 1, c - 1] == -self.ID and 
                         np.sum(board[r - self.X_IN_A_LINE + 1:r, c - self.X_IN_A_LINE + 1:c]) == -(self.X_IN_A_LINE - 1) and 
                         legalMove(board, (r - self.X_IN_A_LINE, c - self.X_IN_A_LINE))):
@@ -63,8 +72,9 @@ class Player(GomokuAgent):
                         np.sum(board[r + 1:r + self.X_IN_A_LINE, c + 1:c + self.X_IN_A_LINE]) == -(self.X_IN_A_LINE - 1) and 
                         legalMove(board, (r + self.X_IN_A_LINE, c + self.X_IN_A_LINE))):
                         moves.append((r + self.X_IN_A_LINE, c + self.X_IN_A_LINE))
-                # Vertical moves
+                # Check for vertical moves
                 if legalMove(board, (r - 1, c)):
+                    # Check if vertical move is valid then add valid vertical moves to the list of moves
                     if (board[r - 1, c] == -self.ID and 
                         np.sum(board[r - self.X_IN_A_LINE + 1:r, c]) == -(self.X_IN_A_LINE - 1) and 
                         legalMove(board, (r - self.X_IN_A_LINE, c))):
@@ -74,8 +84,9 @@ class Player(GomokuAgent):
                         np.sum(board[r + 1:r + self.X_IN_A_LINE, c]) == -(self.X_IN_A_LINE - 1) and 
                         legalMove(board, (r + self.X_IN_A_LINE, c))):
                                 moves.append((r + self.X_IN_A_LINE, c))
-                # Horizontal moves
+                # Check for horizontal moves
                 if legalMove(board, (r, c - 1)):
+                    # Check if the horizontal move is valid then add valid horizontal moves to the list of moves
                     if (board[r, c - 1] == -self.ID and 
                         np.sum(board[r, c - self.X_IN_A_LINE + 1:c]) == -(self.X_IN_A_LINE - 1) and 
                         legalMove(board, (r, c - self.X_IN_A_LINE))):
@@ -154,20 +165,7 @@ class Player(GomokuAgent):
                 elif board[r, c] == -self.ID:
                     # Subtract the score for the current position and possible moves from this position
                     score -= self.get_score_for_position(board, r, c)
-                    score -= self.get_score_for_potential_moves(board, r, c)
-                    if (r,c) == (3,3) or (r,c) == (4,4) or (r,c) == (3,4) or (r,c) == (4,3):
-                        score -= 50  # Penalty for opponent having a piece in the center of the board
-                    if self.ID == 1:
-                        if board[r, c] == 1:
-                            score -= 5  # Penalty for opponent having more pieces on the board
-                        else:
-                            score += 5
-                    else:
-                        if board[r, c] == -1:
-                            score -= 5
-                        else:
-                            score += 5
-                                
+                    score -= self.get_score_for_potential_moves(board, r, c)                      
         return score
 
     """
@@ -191,10 +189,11 @@ class Player(GomokuAgent):
                 check_col = col - dc
                 if check_row >= 0 and check_row < self.BOARD_SIZE and check_col >= 0 and check_col < self.BOARD_SIZE and board[check_row][check_col] == self.ID:
                     piece_count = 0
+                    # Calculate the row/column index of the next piece
                     for i in range(self.X_IN_A_LINE):
                         r = check_row + i * dr
                         c = check_col + i * dc
-
+                    
                         if r < 0 or r >= self.BOARD_SIZE or c < 0 or c >= self.BOARD_SIZE:
                             break
                         if board[r][c] == self.ID:
@@ -204,8 +203,12 @@ class Player(GomokuAgent):
                         else:
                             piece_count = 0
                             break
-                    if piece_count == self.X_IN_A_LINE - 1:
-                        score -= 1000000
+
+                    if piece_count == self.X_IN_A_LINE - 2:
+                        score += 1000
+                    if piece_count >= self.X_IN_A_LINE - 1:
+                        score += 10000
+                        
                 # check vertically
                 check_row = row - dr * (self.X_IN_A_LINE - 1)
                 check_col = col - dc * (self.X_IN_A_LINE - 1)
@@ -224,9 +227,13 @@ class Player(GomokuAgent):
                         else:
                             piece_count = 0
                             break
-                    if piece_count == self.X_IN_A_LINE - 1:
-                        score -= 1000000
-        directions = [(0, 1), (1, 0), (1, 1), (-1, 1)] # new diagonal directions
+
+                    if piece_count == self.X_IN_A_LINE - 2:
+                        score += 1000
+                    if piece_count >= self.X_IN_A_LINE - 1:
+                        score += 10000
+                    
+        directions = [(0, 1), (1, 0), (1, 1), (-1, 1)] # diagonal directions
         for dr, dc in directions:
             piece_count = 0
             for i in range(-self.X_IN_A_LINE + 1, self.X_IN_A_LINE):
@@ -242,8 +249,11 @@ class Player(GomokuAgent):
                     piece_count = 0
                     break
         
-            if piece_count >= self.X_IN_A_LINE - 1:
-                score += 1000
+                if piece_count == self.X_IN_A_LINE - 2:
+                    score += 1000
+                if piece_count >= self.X_IN_A_LINE - 1:
+                    score += 10000
+
 
         return score
     
@@ -285,7 +295,7 @@ class Player(GomokuAgent):
                 open_end = False
                 break
             
-        # Count the number of opponent's stones in the given direction
+        # Count the number of opponent's pieces in the given direction
         countOpponent = 0
         for i in range(self.X_IN_A_LINE):
             r = row + i * dr
