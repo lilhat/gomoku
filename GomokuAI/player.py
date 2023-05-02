@@ -1,367 +1,252 @@
+# group: 851108, 1913899
+
+# Initially created a solution using the Minimax algorithm with Alpha-Beta pruning alongside some in depth heuristics.
+# The algorithm had a depth of 1 which worked with a time out of 10 seconds, but would time out before finding a solution for each move at 5 seconds.
+
+# The solution was recreated using Monte Carlo Tree Search (MCTS), which has a simpler 'anytime' behaviour. This means the iterations can continue to run
+# until the time limit is reached, which then returns the best move found so far. This required significantly less processing time, and allowed for simpler
+# heuristics to be integrated, while still producing promising results.
+
+
 # Import required libraries
-import numpy as np
+import math
+import copy
 from gomokuAgent import GomokuAgent
-from misc import legalMove, winningTest
+import time
+from misc import winningTest
+from random import choice
 
-# Player class definition, inherits from GomokuAgent
+class Node:
+
+    '''
+    Initializing the node with the necessary attributes for the Node class
+    '''
+    def __init__(self, board, parent, current_player, move_loc):
+        self.board = board # The current game state of the board
+        self.parent = parent # Parent node
+        self.current_player = current_player # The current player
+        self.move_loc = move_loc # The move location
+        # Initializing the node with an empty list of children
+        self.children = []
+        # Initializing the number of times the nodes has been visited and the number of wins 
+        self.visits = 0
+        self.wins = 0
+        # Initialize a flag indicating whether the node has been expanded yet or not
+        self.expanded = False
+
+    '''
+    Create child nodes for the current node 
+    '''
+    def expand(self):
+        # Create a list of all legal moves that can be made by the current player
+        legal_moves = [(i, j) for i in range(len(self.board)) for j in range(len(self.board)) if self.board[i][j] == 0]
+
+        # Create a new board for each legal move by making that move and add it as a child node to the current node
+        for move in legal_moves:
+            new_board = copy.deepcopy(self.board)
+            new_board[move[0]][move[1]] = self.current_player
+            new_node = Node(new_board, self, -self.current_player, move)
+            self.children.append(new_node)
+
+        # Mark the current node as expanded so that its does not get expanded again in the future
+        self.expanded = True
+
 class Player(GomokuAgent):
-    # Class constructor
+    '''
+    Initializing the node with the necessary attributes for the Player class
+    '''
     def __init__(self, ID, BOARD_SIZE, X_IN_A_LINE):
-        # Calls the constructor from GomokuAgent
-        super().__init__(ID, BOARD_SIZE, X_IN_A_LINE)
-        # Sets the max depth of the minimax algorithm to 0
-        self.MAX_DEPTH = 0
+        self.ID = ID # Player ID
+        self.board_size = BOARD_SIZE # Size of the game board
+        self.x_in_a_line = X_IN_A_LINE # Number of stones in a row required to win the game
+        self.TIME_OUT = 5 # The amount of time the player has to make a move
 
-    # Overwriting the move function from GomokuAgent
+    '''
+    The purpose of this method is to use monte carlo tree search to find
+    the best move for a player.
+    Parameters:
+        - board: The current state of the board
+    Returns:
+        - best_child.mov_loc: The child node with the highest win rate
+    '''
     def move(self, board):
-        # Initialize variables
-        best_move = None
-        best_score = -np.inf
-        # Loop through all possible moves
-        for move in self.generate_moves(board):
-            # Create copy of the board, make current move on copy
-            new_board = np.copy(board)
-            new_board[move] = self.ID
-            # Calculate the score for current move using minimax algorithm
-            score = self.minimax(new_board, self.MAX_DEPTH, -np.inf, np.inf, False)
-            # If score is greater than the previous best score then update the best move and best score
+        # Get the current time and the time at which the search should end
+        start_time = time.time()
+        end_time = start_time + self.TIME_OUT
+
+        root = Node(board, None, self.ID, None)
+
+        # Loop until time runs out
+        while time.time() < end_time:
+            # Starting at the root
+            node = root
+            # selection
+            while node.children:
+                # Select the child with the highest UCB1 score
+                node = self.select_child(node)
+
+            # expansion
+            # If the selected node is not expanded yet, generate all possible child nodes
+            if not node.expanded:
+                node.expand()
+
+            # simulation
+            # Simulate a game from the selected child node until the end of the game
+            winner = self.simulate(node)
+
+            # backpropagation
+            # Update the statitics of all nodes visited during the search based on the result of the simulated game.
+            while node:
+                node.visits += 1
+                if winner == self.ID:
+                    node.wins += 1
+                node = node.parent
+
+        # Select a child node with the highest win rate after the search is complete.
+        best_child = self.select_best_child(root)
+        return best_child.move_loc
+
+    '''
+    Selects the child node of the current node with the highest UCT score
+    Parameters:
+        - node: The current node being checked
+    Returns:
+        - best_child: The child node with the highest UCT score
+    '''
+    def select_child(self, node):
+        # Calculate total visits for all children of current node
+        total_visits = sum(child.visits for child in node.children)
+        # Calculate logarithm of total visits, 1 if there are none
+        log_total = math.log(total_visits or 1)
+
+        best_score = float("-inf")
+        best_child = None
+
+        # Iterate over each child of current node
+        for child in node.children:
+            # Calculate ratio of wins to visits, add 0.01 to avoid ZeroDivisionError
+            exploit = child.wins / (child.visits + 0.01)
+            # Calculate term based on total visists and visits to current child, add 0.01 to avoid ZeroDivisionError
+            explore = math.sqrt(log_total / (child.visits + 0.01))
+            # Combine terms to give score for current child
+            score = exploit + explore
+
+            # If the score is higher than the current best score, replace with current child
             if score > best_score:
-                best_move = move
                 best_score = score
-        # Return best move
-        print(best_score)
-        print(best_move)
-        return best_move
+                best_child = child
+
+        # Return highest scoring child
+        return best_child
 
     '''
-    Generates a list of legal moves for a given board
+    Selects the child node of the current node with the most visits, or if many children have 
+    the most visits, the one with the highest ratio wins.
     Parameters:
-        - board: the current state of the game
-    returns:
-        - moves: a list of legal moves for the given game board
-    '''
-    def generate_moves(self, board):
-        moves = []
-        # Iterate through every position on the board
-        for r in range(self.BOARD_SIZE):
-            for c in range(self.BOARD_SIZE):
-                # If position is a legal move, add it to list of moves
-                if legalMove(board, (r, c)):
-                    moves.append((r, c))
-                # Check for diagonal moves
-                if legalMove(board, (r - 1, c - 1)):
-                    # Check if diagonal move is valid then add valid diagonal moves to the list of moves
-                    # Checks if there is enough space on either side to form 5 in a row
-                    # Also checks if the next space on either end is occupied by the opponent for possibility to block
-                    if (board[r - 1, c - 1] == -self.ID and 
-                        np.sum(board[r - self.X_IN_A_LINE + 1:r, c - self.X_IN_A_LINE + 1:c]) == -(self.X_IN_A_LINE - 1) and 
-                        legalMove(board, (r - self.X_IN_A_LINE, c - self.X_IN_A_LINE))):
-                        moves.append((r - self.X_IN_A_LINE, c - self.X_IN_A_LINE))
-                    if (c + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and
-                        board[r - 1, c + 1] == -self.ID and 
-                        np.sum(board[r - self.X_IN_A_LINE + 1:r, c + 1:c + self.X_IN_A_LINE]) == -(self.X_IN_A_LINE - 1) and 
-                        legalMove(board, (r - self.X_IN_A_LINE, c + self.X_IN_A_LINE))):
-                        moves.append((r - self.X_IN_A_LINE, c + self.X_IN_A_LINE))
-                    if (r + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and
-                        board[r + 1, c - 1] == -self.ID and 
-                        np.sum(board[r + 1:r + self.X_IN_A_LINE, c - self.X_IN_A_LINE + 1:c]) == -(self.X_IN_A_LINE - 1) and 
-                        legalMove(board, (r + self.X_IN_A_LINE, c - self.X_IN_A_LINE))):
-                        moves.append((r + self.X_IN_A_LINE, c - self.X_IN_A_LINE))
-                    if (r + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and c + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and
-                        board[r + 1, c + 1] == -self.ID and 
-                        np.sum(board[r + 1:r + self.X_IN_A_LINE, c + 1:c + self.X_IN_A_LINE]) == -(self.X_IN_A_LINE - 1) and 
-                        legalMove(board, (r + self.X_IN_A_LINE, c + self.X_IN_A_LINE))):
-                        moves.append((r + self.X_IN_A_LINE, c + self.X_IN_A_LINE))
-                # Check for vertical moves
-                if legalMove(board, (r - 1, c)):
-                    # Check if vertical move is valid then add valid vertical moves to the list of moves
-                    if (board[r - 1, c] == -self.ID and 
-                        np.sum(board[r - self.X_IN_A_LINE + 1:r, c]) == -(self.X_IN_A_LINE - 1) and 
-                        legalMove(board, (r - self.X_IN_A_LINE, c))):
-                        moves.append((r - self.X_IN_A_LINE, c))
-                    if (r + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and
-                        board[r + 1, c] == -self.ID and 
-                        np.sum(board[r + 1:r + self.X_IN_A_LINE, c]) == -(self.X_IN_A_LINE - 1) and 
-                        legalMove(board, (r + self.X_IN_A_LINE, c))):
-                                moves.append((r + self.X_IN_A_LINE, c))
-                # Check for horizontal moves
-                if legalMove(board, (r, c - 1)):
-                    # Check if the horizontal move is valid then add valid horizontal moves to the list of moves
-                    if (board[r, c - 1] == -self.ID and 
-                        np.sum(board[r, c - self.X_IN_A_LINE + 1:c]) == -(self.X_IN_A_LINE - 1) and 
-                        legalMove(board, (r, c - self.X_IN_A_LINE))):
-                        moves.append((r, c - self.X_IN_A_LINE))
-                    if (c + self.X_IN_A_LINE <= self.BOARD_SIZE - 1 and
-                        board[r, c + 1] == -self.ID and 
-                        np.sum(board[r, c + 1:c + self.X_IN_A_LINE]) == -(self.X_IN_A_LINE - 1) and 
-                        legalMove(board, (r, c + self.X_IN_A_LINE))):
-                        moves.append((r, c + self.X_IN_A_LINE))
-
-        return moves
-
-
-    '''
-    This function is an implementation of the minimax algorith with alpha-beta pruning
-    Parameters:
-        - board: current state of the game
-        - depth: maximum depth for the algorithm to go through
-        - alpha: the best value the maximising player can guarantee
-        - beta: the best value the minimising player can guarantee
-        - maximizing_player: the current player that is maximising
+        - node: The current node being checked
     Returns:
-        - score: the best score found by the algorithm
+        - best_child: The child node with the highest number of visits, or if many children have 
+        the most visits, the one with the highest ratio wins.
     '''
-    def minimax(self, board, depth, alpha, beta, maximizing_player):
-        # Check if current player has won the game
-        if winningTest(self.ID, board, self.X_IN_A_LINE):
-            return 1000000 - depth
-        # Check if other player has won the game
-        elif winningTest(-self.ID, board, self.X_IN_A_LINE):
-            return -1000000 + depth
-        # Check if maximum depth has been reached
-        elif depth == 0:
-            return self.heuristic_score(board)
-        # Find best move if the current player is maximising
-        if maximizing_player:
-            max_score = -np.inf
-            for move in self.generate_moves(board):
-                new_board = np.copy(board)
-                new_board[move] = self.ID
-                score = self.minimax(new_board, depth - 1, alpha, beta, False)
-                max_score = max(max_score, score)
-                alpha = max(alpha, score)
-                if beta <= alpha:
-                    break  # beta cutoff
-            return max_score
-        # Find worst move for the other player if the current player is minimising
-        else:
-            min_score = np.inf
-            for move in self.generate_moves(board):
-                new_board = np.copy(board)
-                new_board[move] = -self.ID
-                score = self.minimax(new_board, depth - 1, alpha, beta, True)
-                min_score = min(min_score, score)
-                beta = min(beta, score)
-                if beta <= alpha:
-                    break  # alpha cutoff
-            return min_score
+    def select_best_child(self, node):
+        most_visits = float("-inf")
+        best_child = None
         
-    '''
-    This function calculates the heuristic score of the current board for the current player.
-    Parameters:
-        - board: The current state of the game board
-    Returns:
-        - score: The heuristic score of the board for the current player
-    '''
-    
-    def heuristic_score(self, board):
-        score = 0
-        for r in range(self.BOARD_SIZE):
-            for c in range(self.BOARD_SIZE):
-                if board[r, c] == self.ID:
-                    # Add the score for the current position and possible moves from this position
-                    score += self.get_score_for_position(board, r, c)
-                    score += self.get_score_for_potential_moves(board, r, c)
-                elif board[r, c] == -self.ID:
-                    # Subtract the score for the current position and possible moves from this position
-                    score -= self.get_score_for_position(board, r, c)
-                    score -= self.get_score_for_potential_moves(board, r, c)                      
-        return score
-
-    """
-        Returns the score for a given position on the board.
-        Parameters:
-            - board: The current state of the game board
-            - row: The row of the position to check
-            - col: The column of the position to check
-        Returns:
-            - Score: The score for the given position on the board.
-        """
-    def get_score_for_position(self, board, row, col):
-        score = 0
-        # check if close to getting 5 in a row
-        for dr in [-1, 0, 1]:
-            for dc in [-1, 0, 1]:
-                if dr == 0 and dc == 0:
-                    continue
-                # check horizontally
-                check_row = row - dr
-                check_col = col - dc
-                if check_row >= 0 and check_row < self.BOARD_SIZE and check_col >= 0 and check_col < self.BOARD_SIZE and board[check_row][check_col] == self.ID:
-                    piece_count = 0
-                    # Calculate the row/column index of the next piece
-                    for i in range(self.X_IN_A_LINE):
-                        r = check_row + i * dr
-                        c = check_col + i * dc
+        # Iterate over each child of current node
+        for child in node.children:
+            # If current child has more visits than the best child update the best child and most visits variables
+            if child.visits > most_visits:
+                best_child = child
+                most_visits = child.visits
+            # If current child has same number of visits as the best child, compare win ratio to make decision
+            elif child.visits == most_visits:
+                if child.wins / child.visits > best_child.wins / best_child.visits:
+                    best_child = child
                     
-                        if r < 0 or r >= self.BOARD_SIZE or c < 0 or c >= self.BOARD_SIZE:
-                            break
-                        if board[r][c] == self.ID:
-                            piece_count += 1
-                        elif board[r][c] == 0:
-                            break
-                        else:
-                            piece_count = 0
-                            break
-
-                    if piece_count == self.X_IN_A_LINE - 2:
-                        score += 1000
-                    if piece_count >= self.X_IN_A_LINE - 1:
-                        score += 10000
-                        
-                # check vertically
-                check_row = row - dr * (self.X_IN_A_LINE - 1)
-                check_col = col - dc * (self.X_IN_A_LINE - 1)
-                if check_row >= 0 and check_row < self.BOARD_SIZE and check_col >= 0 and check_col < self.BOARD_SIZE and board[check_row][check_col] == self.ID:
-                    piece_count = 0
-                    for i in range(self.X_IN_A_LINE):
-                        r = check_row + i * dr
-                        c = check_col + i * dc
-
-                        if r < 0 or r >= self.BOARD_SIZE or c < 0 or c >= self.BOARD_SIZE:
-                            break
-                        if board[r][c] == self.ID:
-                            piece_count += 1
-                        elif board[r][c] == 0:
-                            break
-                        else:
-                            piece_count = 0
-                            break
-
-                    if piece_count == self.X_IN_A_LINE - 2:
-                        score += 1000
-                    if piece_count >= self.X_IN_A_LINE - 1:
-                        score += 10000
-                    
-        directions = [(0, 1), (1, 0), (1, 1), (-1, 1)] # diagonal directions
-        for dr, dc in directions:
-            piece_count = 0
-            for i in range(-self.X_IN_A_LINE + 1, self.X_IN_A_LINE):
-                r = row + i * dr
-                c = col + i * dc
-                if r < 0 or r >= self.BOARD_SIZE or c < 0 or c >= self.BOARD_SIZE:
-                    continue
-                if board[r, c] == self.ID:
-                    piece_count += 1
-                elif board[r, c] == 0:
-                    continue
-                else:
-                    piece_count = 0
-                    break
-        
-                if piece_count == self.X_IN_A_LINE - 2:
-                    score += 1000
-                if piece_count >= self.X_IN_A_LINE - 1:
-                    score += 10000
-
-
-        return score
-    
+        # Return highest scoring child
+        return best_child
 
     '''
-    This function is to get the score for a given direction with direction vector on the board
+    Simulate a game from the given node by selecting moves using a heuristic.
     Parameters:
-        - board: the game board
-        - row: row of the starting position
-        - col: column of the starting position
-        - dr: direction vector for the row
-        - dc: direction vector for the column
+        - node: A node object representing the current state of the game
     Returns:
-        - score: the score for the given direction
-    '''       
-    def get_score_for_direction(self, board, row, col, dr, dc):
-        score = 0
-        player_piece_count = 0
-        open_end = False
-        #Check over the positions in the given direction
-        for i in range(self.X_IN_A_LINE):
-            r = row + i * dr
-            c = col + i * dc
-            #Break the loop if the position is out of the board
-            if r < 0 or r >= self.BOARD_SIZE or c < 0 or c >= self.BOARD_SIZE:
-                break
-            # Increment the player piece count if the position contains the player's piece
-            if board[r][c] == self.ID:
-                player_piece_count += 1
-            # If the position is empty check if it is a open end
-            elif board[r][c] == 0:
-                if i == 0 or i == self.X_IN_A_LINE - 1:
-                    open_end = True
-                else:
-                    open_end = False
-                break
-            #Break loop if position has the opponent's piece
-            else:
-                open_end = False
-                break
-            
-        # Count the number of opponent's pieces in the given direction
-        countOpponent = 0
-        for i in range(self.X_IN_A_LINE):
-            r = row + i * dr
-            c = col + i * dc
+        - An integer (1 or -1) which indicates the winning player. 0 if draw.
+    '''
+    def simulate(self, node):
+        # Create a copy of the board and set the current player
+        board = copy.deepcopy(node.board)
+        current_player = node.current_player
+        # Get the board size and number of pieces in a row needed to win
+        board_size = self.board_size
+        x_in_a_line = self.x_in_a_line
 
-            if r < 0 or r >= self.BOARD_SIZE or c < 0 or c >= self.BOARD_SIZE:
-                break
-            if board[r][c] == self.ID:
-                countOpponent += 1
-            elif board[r][c] == 0:
-                if i == 0 or i == self.X_IN_A_LINE - 1:
-                    open_end = True
-                else:
-                    open_end = False
-                break
-            else:
-                open_end = False
-                break
-        # Update the score based on the player piece count and open end status
-        if player_piece_count > 0 and player_piece_count < self.X_IN_A_LINE and open_end:
-            score += player_piece_count
-        elif player_piece_count == self.X_IN_A_LINE:
-            score += self.X_IN_A_LINE * 2
+        while True:
+            # Get a list of all legal moves
+            legal_moves = [(i, j) for i in range(board_size) for j in range(board_size) if board[i][j] == 0]
+            # Check for a draw
+            if not legal_moves:
+                return 0
 
-        return score
-    
-    """
-    This function calculate the score for potential moves at a given position.
-    Parameters:
-        - board: The current state of the board.
-        - r: The row number of the potential move.
-        - c: The column number of the potential move.
-    Returns:
-        - score: The score of the potential move.
-    """
-    def get_score_for_potential_moves(self, board, r, c):
-        score = 0
+            # Check for potential opponent wins and block them
+            opponent = -current_player
+            # Iterate over each legal move
+            for move in legal_moves:
+                # Check in each possible direction
+                for direction in [(1,0), (0,1), (1,1), (1,-1)]:
+                    count = 0
+                    # Iterate over each space around the move
+                    for i in range(-x_in_a_line+1, x_in_a_line):
+                        # Calculate the row and column coordinates
+                        row = move[0] + i * direction[0]
+                        col = move[1] + i * direction[1]
+                        # Check if the move is out of bounds or not an opponent piece
+                        if (row < 0 or row >= board_size or col < 0 or col >= board_size or
+                                board[row][col] != opponent):
+                            break # Stop counting if conditions are met
+                        count += 1
+                    if count >= x_in_a_line - 1:
+                        # Found a potential opponent win, block it
+                        board[move] = current_player
+                        # Check if the current player wins
+                        if winningTest(current_player, board, x_in_a_line):
+                            return current_player
+                        # Switch to other player
+                        current_player = -current_player
+
+            # Evaluate each move using a simple heuristic
+            scores = []
+            # Iterate over each legal move
+            for move in legal_moves:
+                score = 0
+                # Check in each possible direction
+                for direction in [(1,0), (0,1), (1,1), (1,-1)]:
+                    count = 0
+                    # Iterate over each space around the move
+                    for i in range(-x_in_a_line+1, x_in_a_line):
+                        # Calculate the row and column coordinates
+                        row = move[0] + i * direction[0]
+                        col = move[1] + i * direction[1]
+                        # Check if the move is out of bound or not a current player piece
+                        if (row < 0 or row >= board_size or col < 0 or col >= board_size or
+                                board[row][col] != current_player):
+                            break # Stop counting if conditions are met
+                        count += 1 # Increase count if conditions are not met
+                    if count >= x_in_a_line - 1: # Check if count is close or equal to 5 in a row
+                        score += count * count  # Add a bonus for longer lines
+                scores.append(score)
+
+            # Choose the move with the highest score
+            best_moves = [i for i in range(len(legal_moves)) if scores[i] == max(scores)]
+            move_index = choice(best_moves)
+            move = legal_moves[move_index]
         
-        # Check horizontally to the right
-        if c < self.BOARD_SIZE - 1 and board[r, c+1] == 0:
-            board[r, c+1] = self.ID
-            score += self.get_score_for_position(board, r, c+1)
-            board[r, c+1] = 0
+            # Make the move on the board 
+            board[move] = current_player
             
-        # Check horizontally to the left
-        if c > 0 and board[r, c-1] == 0:
-            board[r, c-1] = self.ID
-            score += self.get_score_for_position(board, r, c-1)
-            board[r, c-1] = 0
-            
-        # Check vertically downwards
-        if r < self.BOARD_SIZE - 1 and board[r+1, c] == 0:
-            board[r+1, c] = self.ID
-            score += self.get_score_for_position(board, r+1, c)
-            board[r+1, c] = 0
-            
-        # Check diagonally downwards to the right
-        if r < self.BOARD_SIZE - 1 and c < self.BOARD_SIZE - 1 and board[r+1, c+1] == 0:
-            board[r+1, c+1] = self.ID
-            score += self.get_score_for_position(board, r+1, c+1)
-            board[r+1, c+1] = 0
-            
-        # Check diagonally downwards to the left
-        if r < self.BOARD_SIZE - 1 and c > 0 and board[r+1, c-1] == 0:
-            board[r+1, c-1] = self.ID
-            score += self.get_score_for_position(board, r+1, c-1)
-            board[r+1, c-1] = 0
-        
-        return score
+            # Check if the current player wins
+            if winningTest(current_player, board, x_in_a_line):
+                return current_player
+
+            # Switch to the other player
+            current_player = -current_player
